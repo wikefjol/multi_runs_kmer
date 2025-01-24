@@ -18,19 +18,20 @@ class MLMtrainer:
                  val_loader: DataLoader,
                  best_weight_save_path: str = "best_pre_train_weights.pt",
                  metrics_jsonl_path: str = "pretraining.jsonl",
-                 num_epochs: int = 10,
+                 num_epochs: int = 50,
                  warmup_ratio: float = 0.1,
-                 initial_lr: float = 5e-5):
-        
+                 initial_lr: float = 5e-5,
+                 patience: int = 10):  # <--- Add a patience parameter
         self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.best_weight_save_path = best_weight_save_path
         self.metrics_jsonl_path = metrics_jsonl_path
         self.num_epochs = num_epochs
+        self.patience = patience  # <--- store patience
 
         self.system_logger = logging.getLogger("system_logger")
-        
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
@@ -50,8 +51,8 @@ class MLMtrainer:
         self.best_val_loss = float("inf")
         self.global_step = 0  # Count how many batches have been processed overall
         
-        #ensure that we get a clean jsonl every time
-        with open(self.metrics_jsonl_path, 'w') as f:
+        # ensure that we get a clean jsonl every time
+        with open(self.metrics_jsonl_path, 'w'):
             pass
 
     def _run_epoch(self, epoch_nr):
@@ -88,7 +89,6 @@ class MLMtrainer:
             mlm_correct += (mlm_preds == mlm_labels).masked_select(mlm_labels != ignore_index).sum().item()
             total_mlm += (mlm_labels != ignore_index).sum().item()
 
-        # Calculate average loss and MLM accuracy
         avg_loss = total_loss / len(self.train_loader)
         mlm_acc = mlm_correct / total_mlm if total_mlm > 0 else 0.0
         return avg_loss, mlm_acc
@@ -121,6 +121,7 @@ class MLMtrainer:
         return avg_loss, mlm_acc
 
     def train(self):
+        no_improvement_count = 0  # <--- tracks epochs with no improvement
         for epoch_nr in range(self.num_epochs):
             train_avg_loss, train_mlm_acc = self._run_epoch(epoch_nr)
             val_avg_loss, val_mlm_acc = self._validate_epoch(epoch_nr)
@@ -129,15 +130,18 @@ class MLMtrainer:
             if val_avg_loss < self.best_val_loss:
                 self.best_val_loss = val_avg_loss
                 torch.save(self.model.state_dict(), self.best_weight_save_path)
+                no_improvement_count = 0
+            else:
+                no_improvement_count += 1
 
             # Print to console if desired
-            current_lr = self.optimizer.param_groups[0]["lr"]  # LR after finishing the epoch
+            current_lr = self.optimizer.param_groups[0]["lr"]
             print(f"\nEpoch {epoch_nr + 1}/{self.num_epochs}")
             print(f"Train Avg Loss: {train_avg_loss:.6f}, Train MLM Accuracy: {train_mlm_acc:.6f}")
             print(f"Val Avg Loss: {val_avg_loss:.6f}, Val MLM Accuracy: {val_mlm_acc:.6f}")
             print(f"Current LR: {current_lr:.8f}")
 
-            # Write JSON metrics
+            # Log metrics
             metrics_entry = {
                 "epoch": epoch_nr + 1,
                 "train_avg_loss": float(train_avg_loss),
@@ -150,6 +154,11 @@ class MLMtrainer:
             with open(self.metrics_jsonl_path, 'a') as f:
                 f.write(json.dumps(metrics_entry) + "\n")
 
+            # Early stopping check
+            if no_improvement_count >= self.patience:
+                print(f"Early stopping triggered. No improvement in val loss for {self.patience} consecutive epochs.")
+                break
+
 
 
 class ClassificationTrainer:
@@ -161,23 +170,28 @@ class ClassificationTrainer:
                  metrics_jsonl_path: str = "finetuning.jsonl",
                  num_epochs: int = 10,
                  warmup_ratio: float = 0.1,
-                 initial_lr: float = 5e-5):
-
+                 initial_lr: float = 5e-5,
+                 patience: int = 3):  # <-- Add a patience parameter here as well
+        """
+        A classification trainer that includes early stopping if the validation loss 
+        fails to improve for 'patience' consecutive epochs.
+        """
         self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.best_weight_save_path = best_weight_save_path
         self.metrics_jsonl_path = metrics_jsonl_path
         self.num_epochs = num_epochs
-
+        self.patience = patience  # <-- store patience
+        
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
         self.criterion = nn.CrossEntropyLoss()
         self.optimizer = optim.AdamW(self.model.parameters(), lr=initial_lr)
 
-        # Scheduler
-        total_steps = len(train_loader) * num_epochs
+        # Scheduler (warmup + linear decay)
+        total_steps = len(self.train_loader) * self.num_epochs
         warmup_steps = int(warmup_ratio * total_steps)
         self.scheduler = get_linear_schedule_with_warmup(
             self.optimizer,
@@ -185,11 +199,11 @@ class ClassificationTrainer:
             num_training_steps=total_steps
         )
 
-        self.best_val_loss = float('inf')
+        self.best_val_loss = float("inf")
         self.global_step = 0
-
-         #ensure that we get a clean jsonl every time
-        with open(self.metrics_jsonl_path, 'w') as f:
+        
+        # Ensure we start with a clean JSONL file
+        with open(self.metrics_jsonl_path, 'w'):
             pass
 
     def _run_epoch(self, epoch_nr):
@@ -207,7 +221,7 @@ class ClassificationTrainer:
             loss = self.criterion(logits, labels)
             loss.backward()
             self.optimizer.step()
-            self.scheduler.step()  # per-batch step
+            self.scheduler.step()
             self.global_step += 1
 
             total_loss += loss.item()
@@ -241,17 +255,26 @@ class ClassificationTrainer:
         return avg_loss, acc
 
     def train(self):
+        """
+        Main training loop with early stopping based on validation loss.
+        If validation loss does not improve for 'patience' consecutive epochs, stop early.
+        """
+        no_improvement_count = 0  # <-- tracks epochs with no improvement
+        
         for epoch_nr in range(self.num_epochs):
             train_loss, train_acc = self._run_epoch(epoch_nr)
             val_loss, val_acc = self._validate_epoch(epoch_nr)
 
+            # Check if validation loss improves
             if val_loss < self.best_val_loss:
                 self.best_val_loss = val_loss
                 torch.save(self.model.state_dict(), self.best_weight_save_path)
+                no_improvement_count = 0
+            else:
+                no_improvement_count += 1
 
-            # Current LR after finishing the epoch
+            # Print status
             current_lr = self.optimizer.param_groups[0]["lr"]
-
             print(f"\nEpoch {epoch_nr + 1}/{self.num_epochs}")
             print(f"Train Loss: {train_loss:.6f}, Train Accuracy: {train_acc:.6f}")
             print(f"Val Loss: {val_loss:.6f},   Val Accuracy: {val_acc:.6f}")
@@ -269,3 +292,8 @@ class ClassificationTrainer:
             }
             with open(self.metrics_jsonl_path, 'a') as f:
                 f.write(json.dumps(metrics_entry) + "\n")
+
+            # Early stopping check
+            if no_improvement_count >= self.patience:
+                print(f"Early stopping triggered. No improvement in val loss for {self.patience} consecutive epochs.")
+                break

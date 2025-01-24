@@ -47,6 +47,11 @@
         "fine_tuning": 3
     },
 
+    "patience":{
+        "pre_training": 10,
+        "fine_tuning": 10
+    },
+
     "batch_size": {
         "pre_training": 128,
         "fine_tuning": 128

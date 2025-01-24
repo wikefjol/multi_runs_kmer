@@ -282,6 +282,7 @@ def run_config(file_path, run_dir, run_name):
         train_loader=pretrain_loader,
         val_loader=preval_loader,
         num_epochs=CONFIG["max_epochs"]["pre_training"],
+        patience=CONFIG["patience"]["pre_training"],
         best_weight_save_path = run_dir + "/best_pre_training_weights.pt",
         metrics_jsonl_path=metrics_file_pre
     )
@@ -291,6 +292,7 @@ def run_config(file_path, run_dir, run_name):
         train_loader=finetrain_loader,
         val_loader=fineval_loader,
         num_epochs=CONFIG["max_epochs"]["fine_tuning"],
+        patience=CONFIG["patience"]["fine_tuning"],
         best_weight_save_path = run_dir + "/best_fine_tuning_weights.pt",
         metrics_jsonl_path=metrics_file_fine
     )
