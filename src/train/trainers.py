@@ -7,7 +7,8 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from transformers import get_linear_schedule_with_warmup
+from transformers import get_cosine_schedule_with_warmup
+
 
 from torch.utils.data import DataLoader
 
@@ -19,8 +20,8 @@ class MLMtrainer:
                  best_weight_save_path: str = "best_pre_train_weights.pt",
                  metrics_jsonl_path: str = "pretraining.jsonl",
                  num_epochs: int = 50,
-                 warmup_ratio: float = 0.1,
-                 initial_lr: float = 5e-5,
+                 warmup_ratio: float = 0.2,
+                 initial_lr: float = 1e-4,
                  patience: int = 10):  # <--- Add a patience parameter
         self.model = model
         self.train_loader = train_loader
@@ -42,7 +43,7 @@ class MLMtrainer:
         # Set up warmup + linear decay
         total_steps = len(self.train_loader) * self.num_epochs
         warmup_steps = int(warmup_ratio * total_steps)
-        self.scheduler = get_linear_schedule_with_warmup(
+        self.scheduler = get_cosine_schedule_with_warmup(
             self.optimizer,
             num_warmup_steps=warmup_steps,
             num_training_steps=total_steps
@@ -169,8 +170,8 @@ class ClassificationTrainer:
                  best_weight_save_path: str = "best_finetuning_weights.pt",
                  metrics_jsonl_path: str = "finetuning.jsonl",
                  num_epochs: int = 10,
-                 warmup_ratio: float = 0.1,
-                 initial_lr: float = 5e-5,
+                 warmup_ratio: float = 0.2,
+                 initial_lr: float = 1e-4,
                  patience: int = 3):  # <-- Add a patience parameter here as well
         """
         A classification trainer that includes early stopping if the validation loss 
@@ -193,7 +194,7 @@ class ClassificationTrainer:
         # Scheduler (warmup + linear decay)
         total_steps = len(self.train_loader) * self.num_epochs
         warmup_steps = int(warmup_ratio * total_steps)
-        self.scheduler = get_linear_schedule_with_warmup(
+        self.scheduler = get_cosine_schedule_with_warmup(
             self.optimizer,
             num_warmup_steps=warmup_steps,
             num_training_steps=total_steps

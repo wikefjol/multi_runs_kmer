@@ -53,8 +53,8 @@
     },
 
     "batch_size": {
-        "pre_training": 128,
-        "fine_tuning": 128
+        "pre_training": 256,
+        "fine_tuning": 256
     },
 
     "masking_percentage": 0.15,
