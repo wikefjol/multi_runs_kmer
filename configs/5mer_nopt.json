@@ -1,0 +1,64 @@
+{
+    "FILE_PATH": "data/raw.fasta",
+    "SAVE_PATH": "pretrained_model.pt",
+    "VOCAB_PATH": "vocab.json",
+
+    "small_set": false,
+    "n_test": 10,
+    "alphabet": ["A", "C", "G", "T"],
+ 
+    "max_sequence_length": 600,
+    "target_labels": ["genus"],
+
+    "model": {
+        "num_layers": 10,
+        "num_attention_heads": 4,
+        "hidden_size": 256,
+        "intermediate_size": 1024,
+        "dropout_rate": 0.05,
+        "num_classes": 19,
+        "mlm_dropout_rate": 0.1
+    },
+
+    "preprocessing": {
+        "tokenization": {
+            "strategy": "kmer",
+            "k": 5
+        },
+        "padding": {
+            "strategy": "end"
+        },
+        "truncation": {
+            "strategy": "end"
+        },
+        "augmentation": {
+            "training": {
+                "strategy": "base",
+                "modification_probability": 0.05
+            },
+            "evaluation": {
+                "strategy": "identity"
+            }     
+        }
+    },    
+    
+    "max_epochs": {
+        "pre_training": 0,
+        "fine_tuning": 100
+    },
+
+    "patience":{
+        "pre_training": 10,
+        "fine_tuning": 10
+    },
+
+    "batch_size": {
+        "pre_training": 128,
+        "fine_tuning": 128
+    },
+
+    "masking_percentage": 0.15,
+    "test_size": 0.1,
+
+    "system_log_lvl": 20
+}
